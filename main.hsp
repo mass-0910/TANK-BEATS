@@ -1,0 +1,1238 @@
+/*
+～戦車ゲーム～
+初めてのwiiに収録されているゲームをイメージしたゲーム
+マウスで標準を合わせ、wasdで戦車を動かす
+敵は好戦家、慎重派、策略家の三種類
+mapテキストに入れる値は以下の通り
+0 : 戦車も弾も通れる地面
+1 : 戦車も弾も通れない壁
+2 : 戦車は通れないが弾は通れる場所(水や穴)
+3 : プレイヤー初期位置
+4 : 敵初期位置(好戦家)
+5 : 敵初期位置(慎重派)
+6 : 敵初期位置(策略家)
+*/
+
+#define GAMETITLE "TANK BEATS"
+#define VERSION "1.0"
+#define WinX 800
+#define WinY 640
+#define EMAX 50
+#define PLAYERV 1.0
+#define ENEMYV 0.8
+#define PBULMAX 5
+#define PBULV 3.0
+#define EBULV 3.0
+#define ENEMYTRV 0.02
+#define EBULMAX 10
+#define PLAYERHPMAX 3
+#define ENEMYHPMAX 3
+#define ANIMEFRAME 5//アニメ一枚にかける時間
+#define LOADINGTIME 100
+#define DISTANCEMAX 50
+#define SMOKENUMMAX 20
+#define SMOKETIME 3
+#define STAGENUMMAX 100
+//#define DEBUG
+
+#module
+
+#defcfunc mesbutton str word,int sx,int sy,int r,int g,int b
+	status = 0
+	strr = r:strg = g:strb = b
+	if (mousex >= sx && mousex <= sx+strlen(word)*20 && mousey >= sy && mousey <= sy+40){
+		status = 1
+		getkey a,1
+		strr = r - 50:strg = g - 50:strb = b - 50
+		if (a == 1):status = 2
+	}
+	pos sx,sy
+	color strr,strg,strb
+	mes word
+	
+	return status
+
+#defcfunc distance double x1, double y1, double x2, double y2
+	return sqrt((x1-x2) * (x1-x2) + (y1-y2) * (y1-y2))
+	
+#defcfunc maxnum array v
+	max = v(0)
+	repeat 7
+		if(max < v(cnt+1)):max = v(cnt+1)
+	loop
+	if(max == 0):return -1
+	tmp = 0
+	repeat 8
+		if(v(cnt) == max):break
+		tmp++
+	loop
+	return tmp
+	
+#defcfunc minnum array v
+	if(v(0) > 0){
+		min = v(0)
+	}else{
+		min = DISTANCEMAX + 1
+	}
+	repeat 7
+		if(min > v(cnt+1) && v(cnt+1) > 0):min = v(cnt+1)
+	loop
+	if(min == DISTANCEMAX+1):return -1
+	tmp = 0
+	repeat 8
+		if(v(cnt) == min):break
+		tmp++
+	loop
+	return tmp
+	
+#global
+
+*Initialize
+	
+	//ウィンドウ設定
+	screen 0,WinX,WinY
+	title GAMETITLE + " ver" + VERSION
+	gmode 2
+	
+	//フォント設定
+	font "Yu Gothic UI Semibold",40
+	
+	//ランダムシード値の初期化
+	randomize
+	
+	//マウスの表示
+	mouse
+	
+	//音声のストップ
+	mmstop
+	
+	//変数の初期化(ゲームを通して変わらないもの)
+	mapnum = 0
+	
+	//配列宣言
+	ddim enemyX,EMAX
+	ddim enemyY,EMAX
+	dim enemymapX,EMAX
+	dim enemymapY,EMAX
+	ddim enemyXV,EMAX
+	ddim enemyYV,EMAX
+	ddim enemyR,EMAX
+	ddim enemyTR,EMAX
+	dim enemyHP,EMAX
+	ddim enemysmokeX,EMAX,SMOKENUMMAX
+	ddim enemysmokeY,EMAX,SMOKENUMMAX
+	ddim enemysmokeXV,EMAX,SMOKENUMMAX
+	ddim enemysmokeYV,EMAX,SMOKENUMMAX
+	ddim enemyshotpointX,EMAX
+	ddim enemyshotpointY,EMAX
+	dim esmoketimer,EMAX
+	ddim playersmokeX,SMOKENUMMAX
+	ddim playersmokeY,SMOKENUMMAX
+	ddim playersmokeXV,SMOKENUMMAX
+	ddim playersmokeYV,SMOKENUMMAX
+	dim etype,EMAX
+	dim eloading,EMAX
+	dim edamagetimer,EMAX
+	dim efirepage,EMAX
+	dim map,10,10
+	dim dmap,10,10
+	dim tmparray,8
+	ddim pbulletX,PBULMAX
+	ddim pbulletY,PBULMAX
+	ddim pbulletXV,PBULMAX
+	ddim pbulletYV,PBULMAX
+	ddim pbulletR,PBULMAX
+	ddim ebulletX,EMAX,EBULMAX
+	ddim ebulletY,EMAX,EBULMAX
+	ddim ebulletXV,EMAX,EBULMAX
+	ddim ebulletYV,EMAX,EBULMAX
+	ddim ebulletR,EMAX,EBULMAX
+	dim ebulnum,EMAX
+	dim eloading,EMAX
+	dim enoshot,EMAX
+	sdim mapname,30,STAGENUMMAX
+	
+	//マップの名前を順番通りに読み込む
+	notesel mapnamebuf
+	noteload dir_cur + "\\data\\" + "mapfile\\" + "mapdata.txt"
+	repeat
+		noteget mapname(cnt),cnt
+		if(mapname(cnt) == "TEXTend"):break
+	loop
+	
+*StartPage
+	celload dir_cur + "\\data\\" + "title.png",1
+	pos 0,0
+	celput 1
+	color 255,255,255
+	pos 200,300
+	mes "START"
+	pos 200,350
+	mes "HOW TO PLAY"
+	repeat
+		redraw 0
+		pos 0,0
+		celput 1
+		getkey a,1:if(a == 0):flag = 1
+		button1 = mesbutton("START", 200, 300, 255, 255, 255)
+		button2 = mesbutton("HOW TO PLAY", 200, 350, 255, 255, 255)
+		button3 = mesbutton("CREDIT", 200, 400, 255, 255, 255)
+		redraw 1
+		if(button1 == 2 && flag == 1){
+			break
+		}else{
+			if((button2 == 2 || button3 == 2) && flag == 1){
+				pos 0,0
+				celput 1
+				pos 100,200
+				color 255,255,255
+				if(button2 == 2):mes "WASDkey : moving\nmouse : direction of Guntower\nclick : shot"
+				if(button3 == 2):mes "Main program : Shakeo\nGraphics : Shakeo & Sasimi\nSpecial thanks : Sasimi"
+				wait 100
+				pos 200,400
+				mes "Click to back to the main menu."
+				flag = 0
+				repeat
+					getkey a,1:if a:break
+					wait 1
+				loop
+			}
+		}
+		wait 1
+	loop
+	
+	//マウス設定
+	mouse -1
+	
+*GameStart
+	mmstop
+	color 0,0,0:boxf
+	color 255,255,255
+	pos 150,170
+	mes "Stage " + (mapnum+1)
+	font "Yu Gothic UI Semibold",70
+	pos 180,230
+	mes mapname(mapnum)
+	wait 200
+	font "Yu Gothic UI Semibold",40
+
+*Main
+	
+	//使用変数の初期化(パラメータ系)
+	tmp = 0
+	enemynum = 0
+	playerX = 32.0
+	playerXV = 0.0
+	playerY = 32.0
+	playerYV = 0.0
+	playerR = 0.0
+	playerTR = 0.0
+	playerHP = 3
+	pdamagetimer = ANIMEFRAME * 4
+	pbulnum = 0
+	loading = 0
+	psmoketimer = 0
+	pfirepage = 0
+	tmpHP = playerHP
+	gameovertime = 0
+	cleartime = 0
+	
+	//マップデータの初期化
+	celload dir_cur + "\\data\\" + "map.png",1
+	celdiv 1,64,64,0,0
+	notesel mapbuf
+	noteload dir_cur + "\\data\\" + "mapfile\\" + mapname(mapnum) + ".txt"
+	i = 0:j = 0
+	repeat 10
+		noteget mapline,cnt
+		i = 0
+		repeat 10
+			map(i,j) = int(strmid(mapline,i,1))
+			i++
+		loop
+		j++
+	loop
+	
+	//砲弾データの初期化
+	repeat PBULMAX
+		pbulletX(cnt) = -1.0
+		pbulletY(cnt) = -1.0
+		pbulletXV(cnt) = 0.0
+		pbulletXV(cnt) = 0.0
+	loop
+	i = 0:j = 0
+	repeat EMAX
+		j = 0
+		repeat EBULMAX
+			ebulletX(i,j) = -1.0
+			ebulletY(i,j) = -1.0
+			ebulletXV(i,j) = 0.0
+			ebulletXV(i,j) = 0.0
+			j++
+		loop
+		i++
+	loop
+	
+	//敵のHP初期化(EMAX分すべてENEMYHPMAXを格納するので、ステージクリア判定の時は注意)
+	repeat EMAX
+		enemyHP(cnt) = ENEMYHPMAX
+	loop
+	
+	//敵の砲弾衝突アニメタイマーの初期化
+	repeat EMAX
+		edamagetimer(cnt) = ANIMEFRAME * 4
+	loop
+	
+	//敵の煙描画時間の初期化
+	repeat EMAX
+		esmoketimer(cnt) = 0
+	loop
+	
+	//プレイヤー画像の設定
+	celload dir_cur + "\\data\\" + "tankbody.bmp",2
+	celload dir_cur + "\\data\\" + "tankhead.bmp",3
+	celdiv 2,64,64,32,32
+	celdiv 3,64,64,32,32
+	
+	//敵画像の設定
+	celload dir_cur + "\\data\\" + "enemybody.bmp",4
+	celload dir_cur + "\\data\\" + "enemyhead.bmp",5
+	celdiv 4,64,64,32,32
+	celdiv 5,64,64,32,32
+	
+	//砲弾画像の設定
+	celload dir_cur + "\\data\\" + "bullet.png",7
+	celdiv 7,8,8,4,4
+	
+	//砲弾直撃画像の設定
+	celload dir_cur + "\\data\\" + "hitimg.png",8
+	celdiv 8,32,32,16,16
+	
+	//煙画像の設定
+	celload dir_cur + "\\data\\" + "smoke.png",9
+	celdiv 9,16,16,8,8
+	
+	//戦闘不能画像の設定
+	celload dir_cur + "\\data\\" + "fire.png",10
+	celdiv 10,32,32,16,16
+	
+	//ダメージ時の画面効果画像の設定
+	celload dir_cur + "\\data\\" + "damage.png",11
+	
+	//ゲームオーバー時の画面設定
+	celload dir_cur + "\\data\\" + "gameover.png",12
+	
+	//クリア画面の設定
+	celload dir_cur + "\\data\\" + "clear.png",13
+	
+	//マウスカーソル画像の設定
+	celload dir_cur + "\\data\\" + "target.png",6
+	celdiv 6,32,32,16,16
+	
+	//音声読み込みと再生
+	mmload dir_cur + "\\data\\" + "catapiller.mp3",0,1
+	mmload dir_cur + "\\data\\" + "catapiller2.mp3",1,1
+	mmload dir_cur + "\\data\\" + "shot.wav",2
+	mmload dir_cur + "\\data\\" + "damage.wav",3
+	mmplay 1
+	
+	//メインループ
+	repeat
+	
+		//背景画像
+		redraw 0
+		color 0,0,0:boxf
+		i = 0:j = 0
+		repeat 10
+			i = 0
+			repeat 10
+				pos i*64,j*64
+				if(map(i,j) == 3){
+					playerX = double(i) * 64.0 + 32.0
+					playerY = double(j) * 64.0 + 32.0
+					map(i,j) = 0
+				}
+				if(map(i,j) == 4){
+					enemyX(enemynum) = double(i) * 64.0 + 32.0
+					enemyY(enemynum) = double(j) * 64.0 + 32.0
+					etype(enemynum) = 0
+					enemynum++
+					map(i,j) = 0
+				}
+				if(map(i,j) == 5){
+					enemyX(enemynum) = double(i) * 64.0 + 32.0
+					enemyY(enemynum) = double(j) * 64.0 + 32.0
+					etype(enemynum) = 1
+					enemynum++
+					map(i,j) = 0
+				}
+				if(map(i,j) == 6){
+					enemyX(enemynum) = double(i) * 64.0 + 32.0
+					enemyY(enemynum) = double(j) * 64.0 + 32.0
+					etype(enemynum) = 2
+					enemynum++
+					map(i,j) = 0
+				}
+				celput 1,map(i,j)
+				i++
+			loop
+			j++
+		loop
+	
+		//プレイヤーグラフィック描画
+		pos playerX, playerY
+		celput 2, , , , playerR
+		pos playerX, playerY
+		celput 3, , , , playerTR
+	
+		//敵グラフィック描画
+		repeat enemynum
+			pos enemyX(cnt), enemyY(cnt)
+			celput 4, , , , enemyR(cnt)
+			pos enemyX(cnt), enemyY(cnt)
+			celput 5, , , , enemyTR(cnt) - m_pi / 2.0
+		loop
+
+		//プレイヤー砲弾の描画
+		repeat PBULMAX
+			if(pbulletX(cnt) != -1.0){
+				pos pbulletX(cnt),pbulletY(cnt)
+				celput 7, , , , pbulletR(cnt)
+			}
+		loop
+	
+		//敵砲弾の描画
+		i = 0:j = 0
+		repeat enemynum
+			j = 0
+			repeat EBULMAX
+				if(ebulletX(i,j) != -1.0){
+					pos ebulletX(i,j),ebulletY(i,j)
+					celput 7, , , , ebulletR(i,j) - m_pi / 2.0
+				}
+				j++
+			loop
+			i++
+		loop
+	
+		//砲弾直撃時の爆発描画
+		if(pdamagetimer != ANIMEFRAME * 4){
+			pos playerX,playerY
+			celput 8,pdamagetimer / ANIMEFRAME
+			pdamagetimer++
+		}
+		repeat enemynum
+			if(edamagetimer(cnt) != ANIMEFRAME * 4){
+				pos enemyX(cnt),enemyY(cnt)
+				celput 8,edamagetimer(cnt) / ANIMEFRAME
+				edamagetimer(cnt)++
+			}
+		loop
+	
+		//プレイヤーの戦闘不能状態の描画(炎)
+		if(playerHP == 0){
+			if(psmoketimer \ ANIMEFRAME == 0){
+				if(pfirepage == 0){
+					pfirepage = 1
+				}else{
+					pfirepage = 0
+				}
+			}
+			pos playerX, playerY
+			celput 10,pfirepage
+		}
+	
+		//敵の戦闘不能状態の描画(炎)
+		repeat enemynum
+			if(enemyHP(cnt) == 0){
+				if(esmoketimer(cnt) \ ANIMEFRAME == 0){
+					if(efirepage(cnt) == 0){
+						efirepage(cnt) = 1
+					}else{
+						efirepage(cnt) = 0
+					}
+				}
+				pos enemyX(cnt), enemyY(cnt)
+				celput 10,efirepage(cnt)
+			}
+		loop
+	
+		//プレイヤーHP1orHP0の時の煙描画
+		if(playerHP <= 1){
+			repeat SMOKENUMMAX
+				if(psmoketimer == 0){
+					playersmokeX(cnt) = playerX
+					playersmokeY(cnt) = playerY
+					playersmokeXV(cnt) = 0.0
+					playersmokeYV(cnt) = 0.0
+				}
+				if(psmoketimer / 3 == cnt){
+					playersmokeXV(cnt) = cos(-m_pi / 2.0 + (double(rnd(10)) - 5.0) * 0.1)
+					playersmokeYV(cnt) = sin(-m_pi / 2.0 + (double(rnd(10)) - 5.0) * 0.1)
+				}
+				playersmokeX(cnt) += playersmokeXV(cnt)
+				playersmokeY(cnt) += playersmokeYV(cnt)
+				if(distance(playerX, playerY, playersmokeX(cnt), playersmokeY(cnt)) >= SMOKENUMMAX * 3){
+					playersmokeX(cnt) = playerX
+					playersmokeY(cnt) = playerY
+				}
+				pos playersmokeX(cnt), playersmokeY(cnt)
+				celput 9
+			loop
+			psmoketimer++
+		}
+	
+		//敵HP1orHP0の時の煙描画
+		i = 0:j = 0
+		repeat SMOKENUMMAX
+			i = 0
+			repeat EMAX
+				if(enemyHP(i) <= 1){
+					if(esmoketimer(i) == 0){
+						enemysmokeX(i,j) = enemyX(i)
+						enemysmokeY(i,j) = enemyY(i)
+						enemysmokeXV(i,j) = 0.0
+						enemysmokeYV(i,j) = 0.0
+					}
+					if(esmoketimer(i) / 3 == j){
+						enemysmokeXV(i,j) = cos(-m_pi / 2.0 + (double(rnd(10)) - 5.0) * 0.1)
+						enemysmokeYV(i,j) = sin(-m_pi / 2.0 + (double(rnd(10)) - 5.0) * 0.1)
+					}
+					enemysmokeX(i,j) += enemysmokeXV(i,j)
+					enemysmokeY(i,j) += enemysmokeYV(i,j)
+					if(distance(enemyX(i), enemyY(i), enemysmokeX(i,j), enemysmokeY(i,j)) >= SMOKENUMMAX * 3){
+						enemysmokeX(i,j) = enemyX(i)
+						enemysmokeY(i,j) = enemyY(i)
+					}
+					pos enemysmokeX(i,j), enemysmokeY(i,j)
+					celput 9
+				}
+				i++
+			loop
+			j++
+		loop
+		repeat EMAX
+			if(enemyHP(cnt) <= 1):esmoketimer(cnt)++
+		loop
+			
+		//パラメータ描画
+		pos 670,20
+		color 255,255,255
+		mes "HP\n" + playerHP
+		if(loading != LOADINGTIME){
+			pos 650,140
+			mes "Loading"
+		}
+		boxf 670,200,(double(loading)/LOADINGTIME) * 100 + 670,210
+		pos 660,250
+		mes "Stage " + (mapnum+1)
+	
+		//ダメージ時の画面効果
+		if(tmpHP != playerHP && playerHP != 0):damageeffect = 200
+		if(tmpHP != playerHP && playerHP == 0):damageeffect = 255
+		gmode 4,,,damageeffect
+		pos 0,0
+		celput 11
+		if(damageeffect != 0):damageeffect -= 2
+		tmpHP = playerHP
+		gmode 2
+	
+		//ゲームオーバー画面の表示
+		if(playerHP == 0){
+			pos 0,0
+			celput 12
+			if(gameovertime > 100){
+				pos 200,400
+				mes "Click to back to the main menu."
+			}
+		}
+	
+		//クリア画面の表示
+		if(clear == 1){
+			pos 0,0
+			celput 13
+			if(cleartime > 100){
+				pos 200,400
+				mes "Click to go to the next stage."
+			}
+		}
+	
+		//マウスカーソル表示
+		pos mousex,mousey
+		celput 6
+	
+#ifndef DEBUG
+redraw 1
+#endif
+	
+		//プレイヤー移動
+		if(playerHP != 0){
+			getkey a,'D':if a{
+				playerXV += PLAYERV
+				if(playerX >= 639.0):playerXV = 0.0
+				if(map(int((playerX+playerXV)/64),int(playerY/64)) == 1 || map(int((playerX+playerXV)/64),int(playerY/64)) == 2):playerXV = 0.0
+			}
+			getkey a,'A':if a{
+				playerXV += -PLAYERV
+				if(map(int((playerX+playerXV)/64),int(playerY/64)) == 1 || map(int((playerX+playerXV)/64),int(playerY/64)) == 2):playerXV = 0.0
+				if(playerX <= 0.0):playerXV = 0.0
+			}
+			getkey a,'W':if a{
+				playerYV += -PLAYERV
+				if(map(int(playerX/64),int((playerY+playerYV)/64)) == 1 || map(int(playerX/64),int((playerY+playerYV)/64)) == 2):playerYV = 0.0
+				if(playerY <= 0.0):playerYV = 0.0
+			}
+			getkey a,'S':if a{
+				playerYV += PLAYERV
+				if(playerY >= 639.0):playerYV = 0.0
+				if(map(int(playerX/64),int((playerY+playerYV)/64)) == 1 || map(int(playerX/64),int((playerY+playerYV)/64)) == 2):playerYV = 0.0
+			}
+			if(playerXV > 0.0 && playerYV == 0.0){//右
+				if(playerR > -m_pi/2.0 && playerR < m_pi/2.0){
+					playerR -= 0.05
+				}else{
+					playerR += 0.05
+				}
+			}
+			if(playerXV < 0.0 && playerYV == 0.0){//左
+				if(playerR > -m_pi/2.0 && playerR < m_pi/2.0){
+					playerR += 0.05
+				}else{
+					playerR -= 0.05
+				}
+			}
+			if(playerXV == 0.0 && playerYV < 0.0){//上
+				if(playerR < 0){
+					playerR -= 0.05
+				}else{
+					playerR += 0.05
+				}
+			}
+			if(playerXV == 0.0 && playerYV > 0.0){//下
+				if(playerR < 0){
+					playerR += 0.05
+				}else{
+					playerR -= 0.05
+				}
+			}
+			if(playerXV > 0 && playerYV < 0){//右上
+				if(playerR < m_pi / 4.0 && playerR > -(3.0 * m_pi) / 4.0){
+					playerR -= 0.05
+				}else{
+					playerR += 0.05
+				}
+			}
+			if(playerXV > 0 && playerYV > 0){//右下
+				if(playerR < (3.0 * m_pi) / 4.0 && playerR > -m_pi / 4.0){
+					playerR -= 0.05
+				}else{
+					playerR += 0.05
+				}
+			}
+			if(playerXV < 0 && playerYV < 0){//左上
+				if(playerR < (3.0 * m_pi) / 4.0 && playerR > -m_pi / 4.0){
+					playerR += 0.05
+				}else{
+					playerR -= 0.05
+				}
+			}
+			if(playerXV < 0 && playerYV > 0){//左下
+				if(playerR > -(3.0 * m_pi) / 4.0 && playerR < m_pi / 4.0){
+					playerR += 0.05
+				}else{
+					playerR -= 0.05
+				}
+			}
+			if(playerR <= -m_pi):playerR += 2.0 * m_pi
+			if(playerR >= m_pi):playerR -= 2.0 * m_pi
+		}
+	
+		//プレイヤーと敵との衝突判定
+		repeat enemynum
+			if(distance(enemyX(cnt), enemyY(cnt), playerX+playerXV, playerY) <= 40):playerXV = 0.0
+			if(distance(enemyX(cnt), enemyY(cnt), playerX, playerY+playerYV) <= 40):playerYV = 0.0
+		loop
+	
+		//プレイヤー位置に速度を加算
+		playerX += playerXV
+		playerY += playerYV
+	
+		//プレイヤー速度を初期化
+		playerXV = 0.0
+		playerYV = 0.0
+	
+		//距離マップの初期化
+		i = 0:j = 0
+		repeat 10
+			i = 0
+			repeat 10
+				dmap(i,j) = 0
+				i++
+			loop
+			j++
+		loop
+	
+		//敵の現在マップ座標を取得
+		repeat enemynum
+			enemymapX(cnt) = int(enemyX(cnt)/64)
+			enemymapY(cnt) = int(enemyY(cnt)/64)
+		loop
+		
+		//距離マップの作製
+		dmap(int(playerX/64), int(playerY/64)) = 50
+		//撃破された敵の居る地点の距離マップを-1にする(生きている敵が迂回路を探すため)
+		repeat enemynum
+			if(enemyHP(cnt) == 0){
+				dmap(enemymapX(cnt), enemymapY(cnt)) = -1
+			}
+		loop
+		repeat 50
+			i = 0:j = 0
+			repeat 10
+				i = 0
+				repeat 10
+					if(dmap(i,j) != 0 && dmap(i,j) != -1){
+						if(i-1 >= 0) : if(map(i-1,j) != 1 && map(i-1,j) != 2 && dmap(i-1,j) == 0) : dmap(i-1,j) = dmap(i,j) -1 : changed = 1
+						if(i+1 <= 9) : if(map(i+1,j) != 1 && map(i+1,j) != 2 && dmap(i+1,j) == 0) : dmap(i+1,j) = dmap(i,j) -1 : changed = 1
+						if(j-1 >= 0) : if(map(i,j-1) != 1 && map(i,j-1) != 2 && dmap(i,j-1) == 0) : dmap(i,j-1) = dmap(i,j) -1 : changed = 1
+						if(j+1 <= 9) : if(map(i,j+1) != 1 && map(i,j+1) != 2 && dmap(i,j+1) == 0) : dmap(i,j+1) = dmap(i,j) -1 : changed = 1
+					}
+					i++
+				loop
+				j++
+			loop
+			if(changed == 0):break
+			changed = 0
+		loop
+	
+		//敵の移動速度決定(ここにそれぞれのアルゴリズムを入れる)
+		repeat enemynum
+			if(enemyHP(cnt) != 0){
+				switch etype(cnt)
+				
+					case 0//好戦家
+						if(dmap(enemymapX(cnt), enemymapY(cnt)) < DISTANCEMAX - 4){
+							repeat 8
+								tmparray(cnt) = 0
+							loop
+							if(enemymapY(cnt) - 1 >= 0) : tmparray(0) = dmap(enemymapX(cnt), enemymapY(cnt) - 1)//上
+							if(enemymapY(cnt) + 1 <= 9) : tmparray(1) = dmap(enemymapX(cnt), enemymapY(cnt) + 1)//下
+							if(enemymapX(cnt) - 1 >= 0) : tmparray(2) = dmap(enemymapX(cnt) - 1, enemymapY(cnt))//左
+							if(enemymapX(cnt) + 1 <= 9) : tmparray(3) = dmap(enemymapX(cnt) + 1, enemymapY(cnt))//右
+							if(enemymapX(cnt) - 1 >= 0 && enemymapY(cnt) - 1 >= 0) : tmparray(4) = dmap(enemymapX(cnt) - 1, enemymapY(cnt) - 1)//左上
+							if(enemymapX(cnt) + 1 <= 9 && enemymapY(cnt) - 1 >= 0) : tmparray(5) = dmap(enemymapX(cnt) + 1, enemymapY(cnt) - 1)//右上
+							if(enemymapX(cnt) + 1 <= 9 && enemymapY(cnt) + 1 <= 9) : tmparray(6) = dmap(enemymapX(cnt) + 1, enemymapY(cnt) + 1)//右下
+							if(enemymapX(cnt) - 1 >= 0 && enemymapY(cnt) + 1 <= 9) : tmparray(7) = dmap(enemymapX(cnt) - 1, enemymapY(cnt) + 1)//左下
+							direction = maxnum(tmparray)
+							switch direction
+								case -1: swbreak
+								case 0 : enemyYV(cnt) += -ENEMYV : swbreak
+								case 1 : enemyYV(cnt) += ENEMYV : swbreak
+								case 2 : enemyXV(cnt) += -ENEMYV : swbreak
+								case 3 : enemyXV(cnt) += ENEMYV : swbreak
+								case 4 : enemyXV(cnt) += -ENEMYV : enemyYV(cnt) += -ENEMYV : swbreak
+								case 5 : enemyXV(cnt) += ENEMYV : enemyYV(cnt) += -ENEMYV : swbreak
+								case 6 : enemyXV(cnt) += ENEMYV : enemyYV(cnt) += ENEMYV : swbreak
+								case 7 : enemyXV(cnt) += -ENEMYV : enemyYV(cnt) += ENEMYV : swbreak
+							swend
+						}
+						swbreak
+		
+					case 1//慎重派
+						if(dmap(enemymapX(cnt), enemymapY(cnt)) > DISTANCEMAX - 10){
+							repeat 8
+								tmparray(cnt) = DISTANCEMAX + 1
+							loop
+							if(enemymapY(cnt) - 1 >= 0) : tmparray(0) = dmap(enemymapX(cnt), enemymapY(cnt) - 1)//上
+							if(enemymapY(cnt) + 1 <= 9) : tmparray(1) = dmap(enemymapX(cnt), enemymapY(cnt) + 1)//下
+							if(enemymapX(cnt) - 1 >= 0) : tmparray(2) = dmap(enemymapX(cnt) - 1, enemymapY(cnt))//左
+							if(enemymapX(cnt) + 1 <= 9) : tmparray(3) = dmap(enemymapX(cnt) + 1, enemymapY(cnt))//右
+							if(enemymapX(cnt) - 1 >= 0 && enemymapY(cnt) - 1 >= 0) : tmparray(4) = dmap(enemymapX(cnt) - 1, enemymapY(cnt) - 1)//左上
+							if(enemymapX(cnt) + 1 <= 9 && enemymapY(cnt) - 1 >= 0) : tmparray(5) = dmap(enemymapX(cnt) + 1, enemymapY(cnt) - 1)//右上
+							if(enemymapX(cnt) + 1 <= 9 && enemymapY(cnt) + 1 <= 9) : tmparray(6) = dmap(enemymapX(cnt) + 1, enemymapY(cnt) + 1)//右下
+							if(enemymapX(cnt) - 1 >= 0 && enemymapY(cnt) + 1 <= 9) : tmparray(7) = dmap(enemymapX(cnt) - 1, enemymapY(cnt) + 1)//左下
+							direction = minnum(tmparray)
+							switch direction
+								case -1: swbreak
+								case 0 : enemyYV(cnt) += -ENEMYV : swbreak
+								case 1 : enemyYV(cnt) += ENEMYV : swbreak
+								case 2 : enemyXV(cnt) += -ENEMYV : swbreak
+								case 3 : enemyXV(cnt) += ENEMYV : swbreak
+								case 4 : enemyXV(cnt) += -ENEMYV : enemyYV(cnt) += -ENEMYV : swbreak
+								case 5 : enemyXV(cnt) += ENEMYV : enemyYV(cnt) += -ENEMYV : swbreak
+								case 6 : enemyXV(cnt) += ENEMYV : enemyYV(cnt) += ENEMYV : swbreak
+								case 7 : enemyXV(cnt) += -ENEMYV : enemyYV(cnt) += ENEMYV : swbreak
+							swend
+						}
+						swbreak
+						
+					case 2//策略家
+						if(eloading(cnt) != LOADINGTIME){
+							repeat 8
+								tmparray(cnt) = DISTANCEMAX + 1
+							loop
+							if(enemymapY(cnt) - 1 >= 0) : tmparray(0) = dmap(enemymapX(cnt), enemymapY(cnt) - 1)//上
+							if(enemymapY(cnt) + 1 <= 9) : tmparray(1) = dmap(enemymapX(cnt), enemymapY(cnt) + 1)//下
+							if(enemymapX(cnt) - 1 >= 0) : tmparray(2) = dmap(enemymapX(cnt) - 1, enemymapY(cnt))//左
+							if(enemymapX(cnt) + 1 <= 9) : tmparray(3) = dmap(enemymapX(cnt) + 1, enemymapY(cnt))//右
+							if(enemymapX(cnt) - 1 >= 0 && enemymapY(cnt) - 1 >= 0) : tmparray(4) = dmap(enemymapX(cnt) - 1, enemymapY(cnt) - 1)//左上
+							if(enemymapX(cnt) + 1 <= 9 && enemymapY(cnt) - 1 >= 0) : tmparray(5) = dmap(enemymapX(cnt) + 1, enemymapY(cnt) - 1)//右上
+							if(enemymapX(cnt) + 1 <= 9 && enemymapY(cnt) + 1 <= 9) : tmparray(6) = dmap(enemymapX(cnt) + 1, enemymapY(cnt) + 1)//右下
+							if(enemymapX(cnt) - 1 >= 0 && enemymapY(cnt) + 1 <= 9) : tmparray(7) = dmap(enemymapX(cnt) - 1, enemymapY(cnt) + 1)//左下
+							direction = minnum(tmparray)
+							switch direction
+								case -1: swbreak
+								case 0 : enemyYV(cnt) += -ENEMYV : swbreak
+								case 1 : enemyYV(cnt) += ENEMYV : swbreak
+								case 2 : enemyXV(cnt) += -ENEMYV : swbreak
+								case 3 : enemyXV(cnt) += ENEMYV : swbreak
+								case 4 : enemyXV(cnt) += -ENEMYV : enemyYV(cnt) += -ENEMYV : swbreak
+								case 5 : enemyXV(cnt) += ENEMYV : enemyYV(cnt) += -ENEMYV : swbreak
+								case 6 : enemyXV(cnt) += ENEMYV : enemyYV(cnt) += ENEMYV : swbreak
+								case 7 : enemyXV(cnt) += -ENEMYV : enemyYV(cnt) += ENEMYV : swbreak
+							swend
+						}else{
+							//見えているかの判定(下からのコピー)
+							repeat enemynum
+								curcnt = cnt
+								repeat 50
+									bitx = (enemyX(curcnt) + cos(atan(playerY - enemyY(curcnt), playerX - enemyX(curcnt))) * (distance(enemyX(curcnt), enemyY(curcnt), playerX, playerY)/50.0) * double(cnt + 1))
+									bity = (enemyY(curcnt) + sin(atan(playerY - enemyY(curcnt), playerX - enemyX(curcnt))) * (distance(enemyX(curcnt), enemyY(curcnt), playerX, playerY)/50.0) * double(cnt + 1))
+									if(map( int(bitx/64), int(bity/64)) == 1){
+										enoshot(curcnt) = 1//見えていない
+										break
+									}else{
+										enoshot(curcnt) = 0//見えている
+									}
+								loop
+							loop
+							if(enoshot(cnt) == 1){
+								repeat 8
+									tmparray(cnt) = 0
+								loop
+								if(enemymapY(cnt) - 1 >= 0) : tmparray(0) = dmap(enemymapX(cnt), enemymapY(cnt) - 1)//上
+								if(enemymapY(cnt) + 1 <= 9) : tmparray(1) = dmap(enemymapX(cnt), enemymapY(cnt) + 1)//下
+								if(enemymapX(cnt) - 1 >= 0) : tmparray(2) = dmap(enemymapX(cnt) - 1, enemymapY(cnt))//左
+								if(enemymapX(cnt) + 1 <= 9) : tmparray(3) = dmap(enemymapX(cnt) + 1, enemymapY(cnt))//右
+								if(enemymapX(cnt) - 1 >= 0 && enemymapY(cnt) - 1 >= 0) : tmparray(4) = dmap(enemymapX(cnt) - 1, enemymapY(cnt) - 1)//左上
+								if(enemymapX(cnt) + 1 <= 9 && enemymapY(cnt) - 1 >= 0) : tmparray(5) = dmap(enemymapX(cnt) + 1, enemymapY(cnt) - 1)//右上
+								if(enemymapX(cnt) + 1 <= 9 && enemymapY(cnt) + 1 <= 9) : tmparray(6) = dmap(enemymapX(cnt) + 1, enemymapY(cnt) + 1)//右下
+								if(enemymapX(cnt) - 1 >= 0 && enemymapY(cnt) + 1 <= 9) : tmparray(7) = dmap(enemymapX(cnt) - 1, enemymapY(cnt) + 1)//左下
+								direction = maxnum(tmparray)
+								switch direction
+									case -1: swbreak
+									case 0 : enemyYV(cnt) += -ENEMYV : swbreak
+									case 1 : enemyYV(cnt) += ENEMYV : swbreak
+									case 2 : enemyXV(cnt) += -ENEMYV : swbreak
+									case 3 : enemyXV(cnt) += ENEMYV : swbreak
+									case 4 : enemyXV(cnt) += -ENEMYV : enemyYV(cnt) += -ENEMYV : swbreak
+									case 5 : enemyXV(cnt) += ENEMYV : enemyYV(cnt) += -ENEMYV : swbreak
+									case 6 : enemyXV(cnt) += ENEMYV : enemyYV(cnt) += ENEMYV : swbreak
+									case 7 : enemyXV(cnt) += -ENEMYV : enemyYV(cnt) += ENEMYV : swbreak
+								swend
+							}
+						}
+						swbreak
+						
+				swend
+			}
+		loop
+	
+		//敵の壁衝突判定
+		repeat enemynum
+			if(enemyX(cnt)+enemyXV(cnt) >= 639.0):enemyXV(cnt) = 0.0
+			if(enemyX(cnt)+enemyXV(cnt) <= 0.0):enemyXV(cnt) = 0.0
+			if(enemyY(cnt)+enemyYV(cnt) >= 639.0):enemyYV(cnt) = 0.0
+			if(enemyY(cnt)+enemyYV(cnt) <= 0.0):enemyYV(cnt) = 0.0
+			if(map(int((enemyX(cnt)+enemyXV(cnt))/64),int(enemyY(cnt)/64)) == 1 || map(int((enemyX(cnt)+enemyXV(cnt))/64),int(enemyY(cnt)/64)) == 2):enemyXV(cnt) = 0.0
+			if(map(int(enemyX(cnt)/64),int((enemyY(cnt)+enemyYV(cnt))/64)) == 1 || map(int(enemyX(cnt)/64),int((enemyY(cnt)+enemyYV(cnt))/64)) == 2):enemyYV(cnt) = 0.0
+		loop
+	
+		//敵の車体衝突判定(プレイヤーと敵)
+		repeat enemynum
+			if(distance(enemyX(cnt)+enemyXV(cnt), enemyY(cnt), playerX, playerY) <= 40):enemyXV(cnt) = 0.0
+			if(distance(enemyX(cnt), enemyY(cnt)+enemyYV(cnt), playerX, playerY) <= 40):enemyYV(cnt) = 0.0
+		loop
+	
+		//敵の車体衝突判定(敵と敵)
+		i = 0:j = 0
+		repeat enemynum
+			i = 0
+			repeat enemynum
+				if(i != j){
+					if(distance(enemyX(j)+enemyXV(j), enemyY(j), enemyX(i), enemyY(i)) <= 50):enemyXV(j) = 0.0
+					if(distance(enemyX(j), enemyY(j)+enemyYV(j), enemyX(i), enemyY(i)) <= 50):enemyYV(j) = 0.0
+				}
+				i++
+			loop
+			j++
+		loop
+	
+		//敵の車体角度
+		repeat enemynum
+			if(enemyXV(cnt) > 0.0 && enemyYV(cnt) == 0.0){//右
+				if(enemyR(cnt) > -m_pi/2.0 && enemyR(cnt) < m_pi/2.0){
+					enemyR(cnt) -= 0.05
+				}else{
+					enemyR(cnt) += 0.05
+				}
+			}
+			if(enemyXV(cnt) < 0.0 && enemyYV(cnt) == 0.0){//左
+				if(enemyR(cnt) > -m_pi/2.0 && enemyR(cnt) < m_pi/2.0){
+					enemyR(cnt) += 0.05
+				}else{
+					enemyR(cnt) -= 0.05
+				}
+			}
+			if(enemyXV(cnt) == 0.0 && enemyYV(cnt) < 0.0){//上
+				if(enemyR(cnt) < 0){
+					enemyR(cnt) -= 0.05
+				}else{
+					enemyR(cnt) += 0.05
+				}
+			}
+			if(enemyXV(cnt) == 0.0 && enemyYV(cnt) > 0.0){//下
+				if(enemyR(cnt) < 0){
+					enemyR(cnt) += 0.05
+				}else{
+					enemyR(cnt) -= 0.05
+				}
+			}
+			if(enemyXV(cnt) > 0 && enemyYV(cnt) < 0){//右上
+				if(enemyR(cnt) < m_pi / 4.0 && enemyR(cnt) > -(3.0 * m_pi) / 4.0){
+					enemyR(cnt) -= 0.05
+				}else{
+					enemyR(cnt) += 0.05
+				}
+			}
+			if(enemyXV(cnt) > 0 && enemyYV(cnt) > 0){//右下
+				if(enemyR(cnt) < (3.0 * m_pi) / 4.0 && enemyR(cnt) > -m_pi / 4.0){
+					enemyR(cnt) -= 0.05
+				}else{
+					enemyR(cnt) += 0.05
+				}
+			}
+			if(enemyXV(cnt) < 0 && enemyYV(cnt) < 0){//左上
+				if(enemyR(cnt) < (3.0 * m_pi) / 4.0 && enemyR(cnt) > -m_pi / 4.0){
+					enemyR(cnt) += 0.05
+				}else{
+					enemyR(cnt) -= 0.05
+				}
+			}
+			if(enemyXV(cnt) < 0 && enemyYV(cnt) > 0){//左下
+				if(enemyR(cnt) > -(3.0 * m_pi) / 4.0 && enemyR(cnt) < m_pi / 4.0){
+					enemyR(cnt) += 0.05
+				}else{
+					enemyR(cnt) -= 0.05
+				}
+			}
+			if(enemyR(cnt) <= -m_pi):enemyR(cnt) += 2.0 * m_pi
+			if(enemyR(cnt) >= m_pi):enemyR(cnt) -= 2.0 * m_pi
+		loop
+		
+		//敵位置に速度を加算
+		repeat enemynum
+			enemyX(cnt) += enemyXV(cnt)
+			enemyY(cnt) += enemyYV(cnt)
+		loop
+	
+		//敵速度を初期化
+		repeat enemynum
+			enemyXV(cnt) = 0.0
+			enemyYV(cnt) = 0.0
+		loop
+	
+		//砲塔旋回
+		if(playerHP != 0):playerTR = atan(mousey-playerY,mousex-playerX) - (m_pi / 2.0)
+	
+		//砲撃
+		getkey a,1:if(a && shotable = 1){//shotableが1の時、砲撃ができる
+			repeat PBULMAX
+				if(pbulletX(cnt) == -1.0){
+					mmplay 2
+					pbulletR(cnt) = playerTR
+					pbulletX(cnt) = playerX + cos(playerTR + (m_pi / 2.0)) * 30.0
+					pbulletY(cnt) = playerY + sin(playerTR + (m_pi / 2.0)) * 30.0
+					pbulletXV(cnt) = cos(playerTR + (m_pi / 2.0)) * PBULV
+					pbulletYV(cnt) = sin(playerTR + (m_pi / 2.0)) * PBULV
+					pbulnum++
+					break
+				}
+			loop
+			loading = 0
+			shotable = 0
+		}
+	
+		//砲弾移動
+		repeat PBULMAX
+			if(pbulletX(cnt) != -1.0){
+				pbulletX(cnt) += pbulletXV(cnt)
+				pbulletY(cnt) += pbulletYV(cnt)
+			}
+		loop
+	
+		//着弾(フィールド範囲外)
+		repeat PBULMAX
+			if(pbulletX(cnt) != -1.0){
+				if(pbulletX(cnt) < 0 || pbulletX(cnt) > 640 || pbulletY(cnt) < 0 || pbulletY(cnt) > 640){
+					pbulletX(cnt) = -1.0
+					pbulletY(cnt) = -1.0
+					pbulletXV(cnt) = 0.0
+					pbulletYV(cnt) = 0.0
+					pbulnum--
+				}
+			}
+		loop
+	
+		//着弾(壁)
+		i = 0:j = 0
+		repeat 10
+			i = 0
+			repeat 10
+				if(map(i,j) == 1){
+					repeat PBULMAX
+						if(pbulletX(cnt) > i*64 && pbulletX(cnt) < (i+1)*64 && pbulletY(cnt) > j*64 && pbulletY(cnt) < (j+1)*64){
+							pbulletX(cnt) = -1.0
+							pbulletY(cnt) = -1.0
+							pbulletXV(cnt) = 0.0
+							pbulletYV(cnt) = 0.0
+							pbulnum--
+						}
+					loop
+				}
+				i++
+			loop
+			j++
+		loop
+		
+		//砲弾装填
+		if(loading != LOADINGTIME):loading++
+		getkey a,1
+		if(loading == LOADINGTIME && a == 0){
+			shotable = 1
+		}
+	
+		//砲弾がMAX数フィールドに出ているとき
+		if(pbulnum == PBULMAX){
+			shotable = 0
+		}
+	
+		//敵の砲塔の向くべきポイントを指定
+		repeat enemynum
+			enemyshotpointX(cnt) = playerX
+			enemyshotpointY(cnt) = playerY
+		loop
+	
+		//敵がプレイヤーを見れるか判定
+		repeat enemynum
+			curcnt = cnt
+			repeat 50
+				bitx = (enemyX(curcnt) + cos(atan(playerY - enemyY(curcnt), playerX - enemyX(curcnt))) * (distance(enemyX(curcnt), enemyY(curcnt), playerX, playerY)/50.0) * double(cnt + 1))
+				bity = (enemyY(curcnt) + sin(atan(playerY - enemyY(curcnt), playerX - enemyX(curcnt))) * (distance(enemyX(curcnt), enemyY(curcnt), playerX, playerY)/50.0) * double(cnt + 1))
+				if(map( int(bitx/64), int(bity/64)) == 1){
+					enoshot(curcnt) = 1//見えていない
+					break
+				}else{
+					enoshot(curcnt) = 0//見えている
+				}
+			loop
+		loop
+		
+		//敵の砲塔旋回
+		repeat enemynum
+			if(enemyHP(cnt) != 0 && enoshot(cnt) == 0){
+				if((enemyshotpointX(cnt) - enemyX(cnt)) * sin(enemyTR(cnt)) - (enemyshotpointY(cnt) - enemyY(cnt)) * cos(enemyTR(cnt)) < 0){
+					enemyTR(cnt) += ENEMYTRV
+				}else{
+					enemyTR(cnt) += -ENEMYTRV
+				}
+			}
+		loop
+	
+		//敵砲塔がプレイヤーに向いているか判定して砲撃
+		repeat enemynum
+			difarg = atan(enemyshotpointY(cnt) - enemyY(cnt), enemyshotpointX(cnt) - enemyX(cnt)) - enemyTR(cnt)
+			curcnt = cnt
+			if(difarg \ m_pi > -ENEMYTRV && difarg \ m_pi < ENEMYTRV && enoshot(cnt) == 0 && eloading(cnt) == LOADINGTIME && rnd(30) == 0 && enemyHP(cnt) != 0){
+				repeat EBULMAX
+					if(ebulletX(curcnt,cnt) == -1.0){
+						mmplay 2
+						ebulletR(curcnt,cnt) = enemyTR(curcnt)
+						ebulletX(curcnt,cnt) = enemyX(curcnt) + cos(enemyTR(curcnt)) * 30.0
+						ebulletY(curcnt,cnt) = enemyY(curcnt) + sin(enemyTR(curcnt)) * 30.0
+						ebulletXV(curcnt,cnt) = cos(enemyTR(curcnt)) * EBULV
+						ebulletYV(curcnt,cnt) = sin(enemyTR(curcnt)) * EBULV
+						ebulnum(curcnt)++
+						break
+					}
+				loop
+				eloading(cnt) = 0
+				ebulnum(cnt)++
+			}
+			if(eloading(cnt) != LOADINGTIME):eloading(cnt)++
+		loop
+	
+		//砲撃判定の初期化
+		repeat enemynum
+			enoshot(cnt) = 0
+		loop
+	
+		//敵の砲弾移動
+		i = 0:j = 0
+		repeat enemynum
+			j = 0
+			repeat EBULMAX
+				if(ebulletX(i,j) != -1.0){
+					ebulletX(i,j) += ebulletXV(i,j)
+					ebulletY(i,j) += ebulletYV(i,j)
+				}
+				j++
+			loop
+			i++
+		loop
+	
+		//敵砲弾着弾(フィールド範囲外)
+		i = 0:j = 0
+		repeat enemynum
+			j = 0
+			repeat EBULMAX
+				if(ebulletX(i,j) != -1.0){
+					if(ebulletX(i,j) < 0 || ebulletX(i,j) > 640 || ebulletY(i,j) < 0 || ebulletY(i,j) > 640){
+						ebulletX(i,j) = -1.0
+						ebulletY(i,j) = -1.0
+						ebulletXV(i,j) = 0.0
+						ebulletYV(i,j) = 0.0
+						ebulnum(i)--
+					}
+				}
+				j++
+			loop
+			i++
+		loop
+	
+		//敵砲弾着弾(壁)
+		i = 0:j = 0
+		repeat 10
+			i = 0
+			repeat 10
+				if(map(i,j) == 1){
+					k = 0:l = 0
+					repeat enemynum
+						l = 0
+						repeat PBULMAX
+							if(ebulletX(k,l) > i*64 && ebulletX(k,l) < (i+1)*64 && ebulletY(k,l) > j*64 && ebulletY(k,l) < (j+1)*64){
+								ebulletX(k,l) = -1.0
+								ebulletY(k,l) = -1.0
+								ebulletXV(k,l) = 0.0
+								ebulletYV(k,l) = 0.0
+								ebulnum(k)--
+							}
+							l++
+						loop
+						k++
+					loop
+				}
+				i++
+			loop
+			j++
+		loop
+	
+		//プレイヤーの砲弾衝突判定
+		if(playerHP != 0){
+			i = 0:j = 0
+			repeat enemynum
+				if(enemyHP(i) != 0 && ebulnum(i) != 0){
+					j = 0
+					repeat EBULMAX
+						if(ebulletX(i,j) != -1.0 && distance(playerX, playerY, ebulletX(i,j), ebulletY(i,j)) < 20){
+							playerHP--
+							pdamagetimer = 0
+							mmplay 3
+							ebulletX(i,j) = -1.0
+							ebulletY(i,j) = -1.0
+							ebulletXV(i,j) = 0.0
+							ebulletYV(i,j) = 0.0
+							ebulnum(i)--
+						}
+						j++
+					loop
+				}
+				i++
+			loop
+		}
+	
+		//敵の砲弾衝突判定
+		i = 0:j = 0
+		repeat enemynum
+			if(enemyHP(j) != 0){
+				i = 0
+				repeat PBULMAX
+					if(pbulletX(i) != -1.0 && distance(enemyX(j), enemyY(j), pbulletX(i), pbulletY(i)) < 20){
+						enemyHP(j)--
+						edamagetimer(j) = 0
+						mmplay 3
+						pbulletX(i) = -1.0
+						pbulletY(i) = -1.0
+						pbulletXV(i) = 0.0
+						pbulletYV(i) = 0.0
+						pbulnum--
+					}
+					i++
+				loop
+			}
+			j++
+		loop
+	
+		//ゲームオーバー処理
+		if(playerHP <= 0){
+			gameovertime++
+			if(gameovertime > 100){
+				getkey a,1:if a:goto *Initialize
+			}
+		}
+	
+		//クリア判定
+		clear = 1
+		repeat enemynum
+			if(enemyHP(cnt) != 0){
+				clear = 0
+				break
+			}
+		loop
+	
+		//クリア処理
+		if(clear = 1){
+			cleartime++
+			if(cleartime > 100){
+				if(mapname(mapnum+1) == "TEXTend"):goto *Initialize
+				getkey a,1:if a:mapnum++:goto *GameStart
+			}
+		}
+	
+	
+#ifdef DEBUG
+//redraw 0
+		i = 0:j = 0
+		repeat 10
+			i = 0
+			repeat 10
+				pos i*64,j*64
+				mes dmap(i,j)
+				i++
+			loop
+			j++
+		loop
+		/*
+		pos mousex,mousey
+		repeat 8
+		mes tmparray(cnt)
+		//mes enemyX(cnt) + " -> " + enemymapX(cnt)
+		loop
+		mes "enum = " + enemynum
+*/
+		redraw 1
+
+#endif
+
+		await 15
+	loop

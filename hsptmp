@@ -1,0 +1,229 @@
+#define WinX 768
+#define WinY 640
+#define GAMETITLE "TANK BEATS MAP EDITOR"
+#define VERSION "1.0"
+#define MAPCHIPCURX 640
+#define MAPCHIPCURY 128
+
+*Initialize
+	
+	//配列宣言
+	dim map,10,10
+	
+	//使用変数の初期化
+	nowchip = 0
+	mapname = ""
+	found = 0
+	
+	//ウィンドウ設定
+	screen 0,WinX,WinY
+	title GAMETITLE + " ver." + VERSION
+	gmode 2
+	
+	//マップデータの初期化
+	celload dir_cur + "\\data\\" + "mapeditor.png",1
+	celdiv 1,64,64,0,0
+	
+	//プレイヤー画像の設定
+	celload dir_cur + "\\data\\" + "tankbody.bmp",2
+	celload dir_cur + "\\data\\" + "tankhead.bmp",3
+	celdiv 2,64,64,32,32
+	celdiv 3,64,64,32,32
+	
+	//敵画像の設定
+	celload dir_cur + "\\data\\" + "enemybody.bmp",4
+	celload dir_cur + "\\data\\" + "enemyhead.bmp",5
+	celdiv 4,64,64,32,32
+	celdiv 5,64,64,32,32
+	
+*Start
+	
+	//マップデータ用
+	notesel mapnamebuf
+	noteload dir_cur + "\\data\\" + "mapfile\\" + "mapdata.txt"
+	
+	//読み込むマップ番号の設定
+	color 0,0,0:boxf
+	color 255,255,255
+	pos 10,30
+	mes "TANK BEATS用　マップエディタ　　バージョン" + VERSION
+	pos 30,60
+	mes "読み込みたいマップの名前を入力して「読み込み」ボタンをクリックしてください。"
+	pos 30,90
+	input mapname,200
+	pos 250,90
+	objsize 150,25
+	button goto "読み込み",*Scan
+	pos 30,120
+	mes "存在するマップデータ↓\n" + mapnamebuf
+	stop
+
+*Scan
+	repeat
+		noteget nameline,cnt
+		tmpmapname = ""
+		repeat 30
+			tmpmapname += strmid(nameline,cnt,1)
+			if(tmpmapname == mapname){
+				found = 1
+				break
+			}
+			if(tmpmapname == "TEXTend"){
+				found = -1
+				break
+			}
+		loop
+		if(found != 0):break
+	loop
+	
+*Makefile
+	if(found == -1){
+		dialog "指定されたマップは存在しません。\n新しく作りますか？",2,"マップの新規作成"
+		if(stat == 6){
+			noteadd mapname,notemax-1,0
+			notesave dir_cur + "\\data\\" + "mapfile\\" + "mapdata.txt"
+			notesel mapbuf
+			i = 0:j = 0
+			repeat 10
+				i = 0
+				repeat 10
+					mapbuf += "0"
+					i++
+				loop
+				mapbuf += "\n"
+				j++
+			loop
+			notesave dir_cur + "\\data\\" + "mapfile\\" + mapname + ".txt"
+		}else{
+			found = 0
+			clrobj
+			goto *Start
+		}
+	}
+	
+*Load
+	title GAMETITLE + " ver." + VERSION + " making:" + mapname
+	notesel mapbuf
+	noteload dir_cur + "\\data\\" + "mapfile\\" + mapname + ".txt"
+	i = 0:j = 0
+	repeat 10
+		noteget mapline,cnt
+		i = 0
+		repeat 10
+			map(i,j) = int(strmid(mapline,i,1))
+			i++
+		loop
+		j++
+	loop
+
+*InitMapeditor
+	clrobj
+	color 0,0,0:boxf
+	pos 650,500
+	objsize 110,64
+	button gosub "セーブ",*Save
+	
+*Main
+	
+	//メインループ
+	repeat
+	
+		//描画部
+		redraw 0
+		color 0,0,0:boxf
+	
+		//マップの描画
+		i = 0:j = 0
+		repeat 10
+			i = 0
+			repeat 10
+				pos i*64,j*64
+				celput 1,map(i,j)
+				i++
+			loop
+			j++
+		loop
+	
+		//選択中のマップチップの描画
+		pos 650,0
+		color 255,255,255
+		mes "選択中"
+		pos 675,30
+		celput 1,nowchip
+	
+		//選べるマップチップの描画
+		i = 0:j = 0
+		repeat 4
+			i = 0
+			repeat 2
+				if(i + j * 2 <= 6){
+					pos i * 64 + MAPCHIPCURX, j * 64 + MAPCHIPCURY
+					celput 1, i + j * 2
+				}
+				i++
+			loop
+			j++
+		loop
+	
+		redraw 1
+	
+		//マップチップの選択
+		getkey a,1
+		i = 0:j = 0
+		repeat 4
+			i = 0
+			repeat 2
+				if(a == 1 && mousex/64 == (i*64 + MAPCHIPCURX)/64 && mousey/64 == (j*64 + MAPCHIPCURY)/64){
+					nowchip = i + j*2
+				}
+				i++
+			loop
+			j++
+		loop
+	
+		//マップチップを置く
+		getkey a,1
+		i = 0:j = 0
+		repeat 10
+			i = 0
+			repeat 10
+				if(a == 1 && mousex/64 == i && mousey/64 == j){
+					if(nowchip == 3){
+						k = 0:l = 0
+						repeat 10
+							k = 0
+							repeat 10
+								if(map(k,l) == 3):map(k,l) = 0
+								k++
+							loop
+							l++
+						loop
+					}
+					map(i,j) = nowchip
+				}
+				i++
+			loop
+			j++
+		loop
+	
+		await 15
+	loop
+
+*Save
+	dialog "現在のマップ情報をセーブします。よろしいですか？",2,"セーブの確認"
+	if(stat == 7):return
+	savebuf = ""
+	notesel savebuf
+	i = 0:j = 0
+	repeat 10
+		i = 0
+		saveline = ""
+		repeat 10
+			saveline += str(map(i,j))
+			i++
+		loop
+		noteadd saveline
+		j++
+	loop
+	notesave dir_cur + "\\data\\" + "mapfile\\" + mapname + ".txt"
+	return
